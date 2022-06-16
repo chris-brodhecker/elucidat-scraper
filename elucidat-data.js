@@ -4,67 +4,68 @@ const Papa = require('papaparse')
 const fs = require('fs');
 const secrets = require('./secrets');
 
-// CHANGE THESE STUDY IDS TO WHAT YOU WANT
+
 let elucidatProjectIDs = []
-const folderIds = ['59365']
-// THIS IS THE FILE
-const outputFileName = 'elucidatData.csv'
+
+// ***** PROJECT LIST SCRAPING VARIABLES ***** //
+// The folder to pull projects from. There are lots of filter options for projects scraping that can be set. 
+// See makeElucidatProjectDataRequest function for details
+const folderIds = ['28983']
 const elucidatProjectsOutputFileName = 'elucidatProjects.csv'
+// ******************************************* //
+
+// ******** LEARNER SCRAPING VARIABLES ****** //
 const learnerDataOutputFile = 'AIA-LearnerData-projectsFromElucidat-niceDates.csv'
 
-
+// The file containing project_codes we want to scrape learner data for
 const elucidatProjectFilePath = 'elucidatProjects.csv'
 const resultsPerPage = 100
+// ******************************************* //
 
 console.log(secrets)
-async function readElucidatProjectIds(fileToRead) {
-    const file = fs.createReadStream(fileToRead);
-    var count = 0; // cache the running count
 
 
-    return new Promise((resolve, reject) => {
+// Method for pulling project data based on folder and search term
+// returns data from https://app.elucidat.com/projects page
+// @folderIds - numericalID of an Elucidat folder. Can be found in payload of https://app.elucidat.com/projects/ request in browser
+// @searchTerm - text phrase to filter projects by (often this is a client acronym or offering acronym)
+async function getElucidatProjectData(folderIds, searchTerm = '') {
+    return new Promise(async (res, rej) => {
+        let allProjectData = []
+        for (let i = 0; i < folderIds.length; i++) {
 
-        Papa.parse(file, {
-            header: true,
-            dynamicTyping: false,
-            step: function (result) {
-                let projectId = result.data["project_code"]
-                elucidatProjectIDs.push(projectId)
-            },
-            complete: function (results, file) {
-                console.log('Done parsing!');
+            try {
+                const folderId = folderIds[i]
+                let totalRecords;
+                let startAt = 0;
+                while (totalRecords === undefined || startAt < totalRecords) {
+                    const pageofProjectData = await makeElucidatProjectDataRequest(folderId, startAt, searchTerm)
+                    totalRecords = pageofProjectData.total
+                    startAt = pageofProjectData.to
 
-                // scrapeRecruitmentStatus()
 
-                // Remove duplicate
-                const uniqueProjectIds = [...new Set(elucidatProjectIDs)];
-                elucidatProjectIDs = uniqueProjectIds
-                console.log(`Found ${elucidatProjectIDs.length} projects`)
-                resolve(uniqueProjectIds)
-            },
-            error: function (e) {
+                    // Add everything to the main array (could be more efficient since we don't need to modify it like we do in learner data)
+                    pageofProjectData.results.forEach(d => {
+                        allProjectData.push(d)
+                    }
+                    )
+                }
+
+            } catch (e) {
+                // Swallowing errors
+                console.error(`Something broke - ${folderId} - I: ${i}`);
                 console.error(e)
             }
-        });
-    }
-    )
-}
-
-
-async function getLearnerDataFromJSVariable(text, variableName) {
-    return new Promise((res, rej) => {
-        try {
-            const formattedVariableName = `var ${variableName} =`
-            const chopFront = text.substring(text.search(formattedVariableName) + formattedVariableName.length, text.length);
-            const JSONOnly = chopFront.substring(0, chopFront.search(";"));
-            const parsedJSON = JSON.parse(JSONOnly);
-            res(parsedJSON)
-        } catch (e) {
-            rej(e)
         }
+        // OPTION: could make one CSV per study by moving the next two lines up into the for loop and appending study id to file name (and clearing recruitmentChangesOutput variable after each write)
+        const csv = Papa.unparse(allProjectData);
+        fs.writeFile(elucidatProjectsOutputFileName, csv, function (err) {
+            if (err) return console.log(err);
+            console.log(`Elucidat project file created: ${elucidatProjectsOutputFileName}`);
+            res()
+        });
     })
 }
-
 
 async function scrapeLearnerData(projectsIDsToScrape) {
     return new Promise(async (res, rej) => {
@@ -72,7 +73,7 @@ async function scrapeLearnerData(projectsIDsToScrape) {
         for (let i = 0; i < projectsIDsToScrape.length; i++) {
             const projectId = projectsIDsToScrape[i]
             try {
-                
+
                 let totalRecords;
                 let startAt = 0;
                 console.log(`Pulling for projectId ${projectId} ${i} of ${projectsIDsToScrape.length} `)
@@ -92,7 +93,7 @@ async function scrapeLearnerData(projectsIDsToScrape) {
                                 d.completed_date = completedDateString
                             }
                             const enrichedData = appendProjectId(projectId, d)
-                            
+
                             allLearnerData.push(enrichedData)
                         }
                         )
@@ -114,6 +115,52 @@ async function scrapeLearnerData(projectsIDsToScrape) {
             console.log(`Learner data file created: ${learnerDataOutputFile}`);
             res()
         });
+    })
+}
+
+/************************/
+/**** Helper Methods ****/
+/************************/
+async function readElucidatProjectIds(fileToRead) {
+    const file = fs.createReadStream(fileToRead);
+
+    return new Promise((resolve, reject) => {
+        console.log('Parsing file starting')
+        Papa.parse(file, {
+            header: true,
+            dynamicTyping: false,
+            step: function (result) {
+                let projectId = result.data["project_code"]
+                elucidatProjectIDs.push(projectId)
+            },
+            complete: function (results, file) {
+                console.log('Parsing file complete');
+                // Remove duplicates
+                const uniqueProjectIds = [...new Set(elucidatProjectIDs)];
+                elucidatProjectIDs = uniqueProjectIds
+                console.log(`Found ${elucidatProjectIDs.length} projects`)
+                resolve(uniqueProjectIds)
+            },
+            error: function (e) {
+                console.error(e)
+                // swallowing 
+            }
+        });
+    }
+    )
+}
+
+async function getLearnerDataFromJSVariable(text, variableName) {
+    return new Promise((res, rej) => {
+        try {
+            const formattedVariableName = `var ${variableName} =`
+            const chopFront = text.substring(text.search(formattedVariableName) + formattedVariableName.length, text.length);
+            const JSONOnly = chopFront.substring(0, chopFront.search(";"));
+            const parsedJSON = JSON.parse(JSONOnly);
+            res(parsedJSON)
+        } catch (e) {
+            rej(e)
+        }
     })
 }
 
@@ -141,7 +188,6 @@ async function makeLearnerDataRequest(projectId, startAt) {
     })
 }
 
-
 function appendProjectId(projectId, jsonObject) {
     const newJson = {
         ...jsonObject,
@@ -151,7 +197,6 @@ function appendProjectId(projectId, jsonObject) {
     return newJson
 }
 
-
 async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
     const url = 'https://app.elucidat.com/projects/'
     const per_page = 100
@@ -159,19 +204,20 @@ async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
     return new Promise(async (resolve, reject) => {
         try {
 
-
-            const response = await axios.post(
-                'https://app.elucidat.com/projects/',
-                new URLSearchParams({
+            // BUG - if there is no value for 'filter' the results are not filtered by folder either (resposne will have filtered: false)
+            const searchParams = new URLSearchParams({
                     'action': 'filter',
                     'project_type': 'all',
-                    'filter': filter,
+                    filter,
                     'show': 'all',
-                    'folders': folderId,
+                    'folders': 27958,
                     'order': 'alpha',
                     skip,
                     per_page
-                }),
+                })
+            const response = await axios.post(
+                url,
+                searchParams,
                 {
                     headers: {
                         'cookie': secrets.elucidat.cookie,
@@ -186,7 +232,6 @@ async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
                     }
                 }
             );
-
             resolve(response.data)
         } catch (e) {
             reject(e)
@@ -194,53 +239,20 @@ async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
     })
 }
 
-async function getElucidatProjectData(folderIds) {
-    return new Promise(async (res, rej) => {
-        let allProjectData = []
-        for (let i = 0; i < folderIds.length; i++) {
 
-            try {
-                const folderId = folderIds[i]
-                let totalRecords;
-                let startAt = 0;
-                while (totalRecords === undefined || startAt < totalRecords) {
-                    const pageofProjectData = await makeElucidatProjectDataRequest('all', startAt, 'AIA')
-                    totalRecords = pageofProjectData.total
-                    startAt = pageofProjectData.to
-
-
-                    // Add everything to the main array (could be more efficient since we don't need to modify it like we do in learner data)
-                    pageofProjectData.results.forEach(d => {
-                        allProjectData.push(d)
-                    }
-                    )
-                }
-
-            } catch (e) {
-                console.error(`Shit's fucked - ${folderId} - I: ${i}`);
-                console.error(e)
-            }
-        }
-        // OPTION: could make one CSV per study by moving the next two lines up into the for loop and appending study id to file name (and clearing recruitmentChangesOutput variable after each write)
-        const csv = Papa.unparse(allProjectData);
-        fs.writeFile(elucidatProjectsOutputFileName, csv, function (err) {
-            if (err) return console.log(err);
-            console.log(`Elucidat project file created: ${elucidatProjectsOutputFileName}`);
-            res()
-        });
-    })
-}
 
 async function mainThing() {
-    // let output = await readStudyList()
-    const allIds = await readElucidatProjectIds(elucidatProjectFilePath)
-    await scrapeLearnerData(allIds)
-    // await scrapeLearnerData()
-    // await getElucidatProjectData(folderIds)
+    // Comment / Uncomment to pull project data or learner data
+
+
+    // const allIds = await readElucidatProjectIds(elucidatProjectFilePath)
+    // await scrapeLearnerData(allIds)
+
+    // Method for pulling project data based on folder and search term
+    // returns data from https://app.elucidat.com/projects page
+    await getElucidatProjectData(folderIds, '')
 
     console.log("All Done")
 }
 
-const o = mainThing()
-
-//scrapeRecruitmentStatus()
+mainThing()
