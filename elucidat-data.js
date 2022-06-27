@@ -313,6 +313,3 @@ btnPickOutput.addEventListener('click', () => pickOutputDirectory())
 spanShowHide.addEventListener('click', () => showHideAuth())
 btnMain.addEventListener('click', () => scrapeData());
 popUpTrigger.addEventListener('click', () => showPopup())
-
-
-txtProjectList.value = '619df4b58c346'

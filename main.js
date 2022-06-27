@@ -4,6 +4,13 @@ const cheerio = require('cheerio');
 const Papa = require('papaparse')
 const fs = require('fs');
 const path = require('node:path');
+const contextMenu = require('electron-context-menu');
+
+// see: https://www.npmjs.com/package/electron-context-menu
+contextMenu({
+	showSaveImageAs: true
+});
+
 let mainWindow
 
 const createWindow = () => {
@@ -16,6 +23,8 @@ const createWindow = () => {
             nodeIntegration: true,
             contextIsolation: false,
             enableRemoteModule: true,
+            spellcheck: false,
+            
         },
     });
     mainWindow.loadURL(`file://${__dirname}/index.html`);
