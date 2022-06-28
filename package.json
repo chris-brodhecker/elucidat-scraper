@@ -10,6 +10,7 @@
     "electron": "electron .",
     "elucidat": "node elucidat-data.js",
     "package": "electron-forge package",
+    "publish": "electron-forge publish",
     "make": "electron-forge make"
   },
   "author": "",
