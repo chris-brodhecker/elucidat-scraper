@@ -1,7 +1,7 @@
 {
   "name": "elucidat-scraper",
   "version": "1.0.0",
-  "description": "",
+  "description": "Scrape data from Elucidat UI",
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -33,7 +33,7 @@
   "config": {
     "forge": {
       "packagerConfig": {
-        "icon": "./elucidat-icon.icns"
+        "icon": "./elucidat-icon.ico"
       },
       "makers": [
         {
