@@ -1,22 +1,76 @@
 {
-  "name": "ct-gov-recruitment",
+  "name": "elucidat-scraper",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Scrape data from Elucidat UI",
+  "main": "main.js",
+  "authors": "Chris Brodhecker",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "elucidat": "node elucidat-data.js"
+    "start": "electron-forge start",
+    "electron": "electron .",
+    "elucidat": "node elucidat-data.js",
+    "package": "electron-forge package",
+    "publish": "electron-forge publish",
+    "make": "electron-forge make"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "axios": "^0.27.2",
     "cheerio": "^1.0.0-rc.10",
+    "curlconverter": "^3.21.0",
+    "electron-context-menu": "^3.3.0",
+    "electron-squirrel-startup": "^1.0.0",
     "json2csv": "^5.0.7",
     "papaparse": "^5.3.2"
   },
   "devDependencies": {
-    "electron": "^18.2.0"
+    "@electron-forge/cli": "^6.0.0-beta.64",
+    "@electron-forge/maker-deb": "^6.0.0-beta.64",
+    "@electron-forge/maker-rpm": "^6.0.0-beta.64",
+    "@electron-forge/maker-squirrel": "^6.0.0-beta.64",
+    "@electron-forge/maker-zip": "^6.0.0-beta.64",
+    "@electron-forge/publisher-github": "^6.0.0-beta.64",
+    "electron": "^18.3.5"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "elucidat-scraper"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "darwin"
+          ]
+        },
+        {
+          "name": "@electron-forge/maker-deb",
+          "config": {}
+        },
+        {
+          "name": "@electron-forge/maker-rpm",
+          "config": {}
+        }
+      ],
+      "publishers": [
+        {
+          "name": "@electron-forge/publisher-github",
+          "config": {
+            "repository": {
+              "owner": "chris-brodhecker",
+              "name": "elucidat-scraper"
+            }
+          }
+        }
+      ]
+    }
   }
 }

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Elucidat Data Scraper</title>
+    <link rel="stylesheet" type="text/css" href="./styles.css" />
+</head>
+
+<body>
+    <h1 class="topBanner">Elucidat Data Scraper</h1>
+
+    <div id="divElucidatSetUpSection">
+        <h2 id="headerHideShowCookieAuth">Initial Set Up (click to hide)</h2>
+        <div id="divCurlCommandSection">
+            <p id="paraAuthInstructions">Log into Elucidat and enter details from Chrome Dev-Tools below</p>
+            <div>
+                <a id="linkShowPopup" class="showPopup">Click here for instructions</a>
+
+                <div id="divInstructionsModal" class="instructionsModal hide">
+                    <span class="helper"></span>
+                    <div>
+                        <p>
+                            <ol class="instructionsList">
+                                <li>Using Chrome Log in to Elucidat and navigate to the 'Projects' page</li>
+                                <li>Open Chrome Dev-Tools (press F12) and switch to the Network tab</li>
+                                <li>Refresh the page</li>
+                                <li>Type 'projects' into the text bar in the top left of the dev tools pane to filter the results</li>
+                                <li>Right click on 'projects/' and select Copy->Copy as cURL</li>
+                                <li>Paste the content into the top textbox of the Elucidat Scraper</li>
+                                <li>Use the scraper!</li>
+                            </ol>
+                        </p>
+                        <div class="popupCloseButton">&times;</div>
+                        <p>
+                            <img src="./elucidatCurl.gif"/>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="flexColumn">
+                <div class="secretRow">
+                    <span class="secretsLabel">cURL from Chrome</span>
+                    <textarea id="txtCurlCommand"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="divDataInputSection">
+
+        <h2>What Data Do You Want?</h2>
+        <div id="divErrorMsg" class="hide">
+            <list id="listErrors">
+            </list>
+        </div>
+        <div id="divDataScrapingSection">
+            <div class="instructions">
+                <p>1. Enter a list of projects below seperated by a space, comma or newline</p>
+                <p>2. Choose the output directory where the generated CSV files will go</p>
+            </div>
+            <div class="inputDataRow" style="display: flex;">
+                <span class="secretsLabel">Project List</span>
+                <textarea id="txtProjectListInput"></textarea>
+
+            </div>
+
+            <div class="inputDataRow" style="display: flex;">
+                <span class="secretsLabel">Output directory</span>
+                <input id="btnPickOutput" type="button" value="Pick Output">
+                <input id="txtOutputDirectory" disabled type="text">
+            </div>
+        </div>
+
+
+
+    </div>
+
+
+    <div id="divScrapeButton">
+
+
+        <input type="button" id="btnMain" class="readyToScrape" value="Start Scraping">
+    </div>
+
+
+
+</body>
+
+<script>
+    // You can also require other files to run in this process
+    require('./renderer.js')
+    require('./elucidat-data.js')
+</script>
+
+</html>

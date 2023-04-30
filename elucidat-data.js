@@ -2,7 +2,11 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const Papa = require('papaparse')
 const fs = require('fs');
+const path = require('path');
 const secrets = require('./secrets');
+const curlconverter = require('curlconverter')
+
+const { autoUpdater, ipcRenderer } = require('electron');
 
 
 let elucidatProjectIDs = []
@@ -19,12 +23,17 @@ const learnerDataOutputFile = 'AIA-LearnerData-projectsFromElucidat-niceDates.cs
 
 // The file containing project_codes we want to scrape learner data for
 const elucidatProjectFilePath = 'elucidatProjects.csv'
-const resultsPerPage = 100
+
 // ******************************************* //
 
 console.log(secrets)
 
 
+
+// New variables for electron stuff
+let chosenOutputPath
+
+/////////
 // Method for pulling project data based on folder and search term
 // returns data from https://app.elucidat.com/projects page
 // @folderIds - numericalID of an Elucidat folder. Can be found in payload of https://app.elucidat.com/projects/ request in browser
@@ -67,57 +76,6 @@ async function getElucidatProjectData(folderIds, searchTerm = '') {
     })
 }
 
-async function scrapeLearnerData(projectsIDsToScrape) {
-    return new Promise(async (res, rej) => {
-        let allLearnerData = []
-        for (let i = 0; i < projectsIDsToScrape.length; i++) {
-            const projectId = projectsIDsToScrape[i]
-            try {
-
-                let totalRecords;
-                let startAt = 0;
-                console.log(`Pulling for projectId ${projectId} ${i} of ${projectsIDsToScrape.length} `)
-                while (totalRecords === undefined || startAt < totalRecords) {
-                    const pageOfLearnerData = await makeLearnerDataRequest(projectId, startAt)
-                    totalRecords = pageOfLearnerData.total
-                    startAt = pageOfLearnerData.to
-
-
-                    // If no learners took this course there will be no 'results' to parse
-                    if (pageOfLearnerData.results !== undefined) {
-                        pageOfLearnerData.results.forEach(d => {
-                            if (d.completed) {
-                                const dateArr = d.completed_date.split('/')
-                                const completedDate = new Date(`${dateArr[1]}/${dateArr[0]}/${dateArr[2]}`)
-                                const completedDateString = `${completedDate.toLocaleDateString('en')} ${completedDate.toLocaleTimeString('uk')}`
-                                d.completed_date = completedDateString
-                            }
-                            const enrichedData = appendProjectId(projectId, d)
-
-                            allLearnerData.push(enrichedData)
-                        }
-                        )
-                    } else {
-                        totalRecords = 0
-                    }
-                }
-
-            } catch (e) {
-                console.error(`Shit's fucked ${projectId} - I: ${i}`);
-                console.error(e)
-            }
-        }
-
-        // Output data to file
-        const csv = Papa.unparse(allLearnerData);
-        fs.writeFile(learnerDataOutputFile, csv, function (err) {
-            if (err) return console.log(err);
-            console.log(`Learner data file created: ${learnerDataOutputFile}`);
-            res()
-        });
-    })
-}
-
 /************************/
 /**** Helper Methods ****/
 /************************/
@@ -150,53 +108,6 @@ async function readElucidatProjectIds(fileToRead) {
     )
 }
 
-async function getLearnerDataFromJSVariable(text, variableName) {
-    return new Promise((res, rej) => {
-        try {
-            const formattedVariableName = `var ${variableName} =`
-            const chopFront = text.substring(text.search(formattedVariableName) + formattedVariableName.length, text.length);
-            const JSONOnly = chopFront.substring(0, chopFront.search(";"));
-            const parsedJSON = JSON.parse(JSONOnly);
-            res(parsedJSON)
-        } catch (e) {
-            rej(e)
-        }
-    })
-}
-
-async function makeLearnerDataRequest(projectId, startAt) {
-    const baseUrl = 'https://app.elucidat.com/analyse/get_learner_data'
-    // Get the history HTML for the study
-    return new Promise(async (resolve, reject) => {
-        const url = `${baseUrl}/${projectId}?skip=${startAt}&per_page=${resultsPerPage}`;
-        try {
-            const response = await axios.get(url,
-                {
-                    headers: {
-                        Cookie: secrets.elucidat.cookie
-                    }
-                });
-
-            const $ = cheerio.load(response.data);
-            const scriptText = $('script')[0].firstChild.data
-            const learner_data = await getLearnerDataFromJSVariable(scriptText, "upload_data");
-            console.log(learner_data)
-            resolve(learner_data)
-        } catch (e) {
-            reject(e)
-        }
-    })
-}
-
-function appendProjectId(projectId, jsonObject) {
-    const newJson = {
-        ...jsonObject,
-        'projectId': projectId
-    }
-
-    return newJson
-}
-
 async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
     const url = 'https://app.elucidat.com/projects/'
     const per_page = 100
@@ -205,16 +116,17 @@ async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
         try {
 
             // BUG - if there is no value for 'filter' the results are not filtered by folder either (resposne will have filtered: false)
+            // Strangely if you use standard 'fetch' instead of axios it seems to work as expected
             const searchParams = new URLSearchParams({
-                    'action': 'filter',
-                    'project_type': 'all',
-                    filter,
-                    'show': 'all',
-                    'folders': 27958,
-                    'order': 'alpha',
-                    skip,
-                    per_page
-                })
+                'action': 'filter',
+                'project_type': 'all',
+                filter,
+                'show': 'all',
+                'folders': 27958,
+                'order': 'alpha',
+                skip,
+                per_page
+            })
             const response = await axios.post(
                 url,
                 searchParams,
@@ -239,20 +151,165 @@ async function makeElucidatProjectDataRequest(folderId, startAt, filter = '') {
     })
 }
 
+function validateInput(input) {
+    if (input.value.length === 0) {
+        input.classList.add("redBorder")
+        return false
+    } else {
+        input.classList.remove("redBorder")
+        return true
+    }
+}
+async function scrapeData() {
+    // Check that everything is filled out
+    console.log('Scraping started')
+    const inputs = [txtProjectList, txtCurlCommand, txtOutputDirectory]
+    let allValid = true
+    inputs.forEach(e => {
+        if (validateInput(e) === false) {
+            allValid = false
+        }
+    })
+    listErrors.innerHTML = ''
+    if (!allValid) {
+        divErrorMsg.classList.add("show")
+        divErrorMsg.classList.remove("hide")
+        const errorElement = document.createElement('li')
+        errorElement.innerText = 'Make sure all fields are filled out'
+        listErrors.appendChild(errorElement)
+        return
+    } else {
+        divErrorMsg.classList.add("hide")
+        divErrorMsg.classList.remove("show")
+    }
+
+    btnMain.classList.add('inProgress')
+    btnMain.classList.remove('readyToScrape')
+    btnMain.value = "In progress..."
+    const auth = txtCurlCommand.value
+    setSecrets(auth)
+
+    const projectInput = txtProjectList.value
+    // Splitting project IDs by either a comma, spaces, or newline
+    const projectIds = projectInput.split(/(?:,|[ ]+|[\r\n]+)+/)
+
+    // Chosen outputPath is set when the user uses the directory picker dialog
+    console.log('SENDING MESSAGE')
+    window.postMessage({
+        type: 'scrapeLearnerData',
+        projectIds,
+        outputPath: chosenOutputPath,
+        cookie: secrets.elucidat.cookie
+    })
+}
 
 
+/* Old code from pre-electron days
 async function mainThing() {
     // Comment / Uncomment to pull project data or learner data
 
 
-    // const allIds = await readElucidatProjectIds(elucidatProjectFilePath)
-    // await scrapeLearnerData(allIds)
+    const allIds = await readElucidatProjectIds(elucidatProjectFilePath)
+    const projectIds = ['123123sad', '2awdlaskdj', 'sdlaskdj']
+    await scrapeLearnerData(projectIds)
 
     // Method for pulling project data based on folder and search term
     // returns data from https://app.elucidat.com/projects page
-    await getElucidatProjectData(folderIds, '')
+    // await getElucidatProjectData(folderIds, '')
 
     console.log("All Done")
 }
 
-mainThing()
+// mainThing()
+*/
+
+function setSecrets(auth) {
+    const curlJSON = JSON.parse(curlconverter.toJsonString(auth))
+    console.log(curlJSON)
+    secrets.elucidat.authorization = curlJSON.headers.authorization
+    console.log(curlJSON.headers.cookie === secrets.elucidat.cookie)
+    secrets.elucidat.cookie = curlJSON.headers.cookie
+    console.log(curlJSON.headers.cookie === secrets.elucidat.cookie)
+}
+
+/* Set up click handlers on window load */
+
+function showHideAuth() {
+
+    if (authShowing) {
+        spanShowHide.innerText = "Initial Set Up (click to show)"
+        divCurlCommandSection.style.display = "none"
+    } else {
+        spanShowHide.innerText = "Initial Set Up (click to hide)"
+        divCurlCommandSection.style.display = "block"
+    }
+
+    authShowing = !authShowing
+}
+
+async function pickOutputDirectory() {
+
+    console.log('Picking Output')
+    window.postMessage({
+        type: 'select-dirs'
+    })
+
+    // Everything from here is handled in main.js and the ipcRendered.on('sel-dir') method
+}
+
+ipcRenderer.on('sel-dir', (event, path) => {
+    const pathAsString = path[0]
+    document.getElementById('txtOutputDirectory').value = pathAsString
+    chosenOutputPath = pathAsString
+})
+
+ipcRenderer.on('pull-complete', (event, errors) => {
+    btnMain.classList.remove('inProgress')
+    btnMain.classList.add('readyToScrape')
+    btnMain.value = "Start Scraping"
+    console.log('Pull Complete', event, errors)
+    if (errors.length > 0) {
+        listErrors.innerHTML = ''
+        divErrorMsg.classList.add("show")
+        divErrorMsg.classList.remove("hide")
+
+        // Put an eye catching item up top
+        const errorHeaderLI = document.createElement('li')
+        errorHeaderLI.innerText = 'ERRORS OCCURRED DURING DATA PULL'
+        listErrors.appendChild(errorHeaderLI)
+
+        errors.forEach(e => {
+            const errorElement = document.createElement('li')
+            errorElement.innerText = `${e.projectId} - ${e.error}`
+            listErrors.appendChild(errorElement)
+        })
+    } else {
+        alert(`Pull Complete! Data saved to ${chosenOutputPath}`)
+    }
+    
+})
+
+function showPopup() {
+    window.postMessage({
+        type: 'show-instructions'
+    })
+}
+
+
+let authShowing = true
+const spanShowHide = document.getElementById("headerHideShowCookieAuth")
+const divCurlCommandSection = document.getElementById("divCurlCommandSection")
+const btnPickOutput = document.getElementById("btnPickOutput")
+const txtCurlCommand = document.getElementById('txtCurlCommand')
+const txtProjectList = document.getElementById('txtProjectListInput')
+const btnMain = document.getElementById("btnMain")
+const txtOutputDirectory = document.getElementById("txtOutputDirectory")
+const listErrors = document.getElementById("listErrors")
+const divErrorMsg = document.getElementById("divErrorMsg")
+const popUpTrigger = document.getElementById("linkShowPopup")
+const instructionsModal = document.getElementById("divInstructionsModal")
+
+btnPickOutput.addEventListener('click', () => pickOutputDirectory())
+spanShowHide.addEventListener('click', () => showHideAuth())
+btnMain.addEventListener('click', () => scrapeData());
+popUpTrigger.addEventListener('click', () => showPopup())
